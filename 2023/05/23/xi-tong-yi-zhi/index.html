@@ -388,7 +388,7 @@
                 
                 <div class="info-break-policy">
                     <i class="far fa-file-word fa-fw"></i>文章字数:&nbsp;&nbsp;
-                    967
+                    2.1k
                 </div>
                 
 
@@ -436,8 +436,78 @@
 <p>​                若想使用NFS为开发板的文件系统，需要在rootfs目录下解压一个文件系统</p>
 <h2 id="uboot移植"><a href="#uboot移植" class="headerlink" title="uboot移植"></a>uboot移植</h2><p><strong>uboot主要作用：</strong>引导启动操作系统内核、部署计算机系统、操作flash、串口等硬件驱动、提供人机交互界面</p>
 <p><strong>uboot启动大概流程</strong>：分为汇编阶段和C语言阶段；</p>
-<p>​        汇编阶段，开机启动uboot，核心硬件初始化，自拷贝（拷贝C语言阶段代码到ram中），设置栈空间</p>
+<p>​        汇编阶段，开机启动uboot，核心硬件设备初始化（设置cpu模式（svc32），关闭看门狗，设置时钟，关闭mmc等），自拷贝（拷贝C语言阶段代码到ram中），设置栈空间</p>
 <p>​        C语言阶段：大部分硬件初始化，[选择性进入交互界面]，将内核读取到ram当中，为内核设置参数，调用操作系统</p>
+<p>uboot修改，默认bootargs修改在uboot/include/configs下对应板子的.h文件，可以修改默认bootargs</p>
+<p>uboot交互界面常用命令：printenv打印环境变量、setenv设置（如set bootcmd tftp 41000000  uImage; tftp 42000000 exynos4412-fs4412.dtb; bootm 41000000 - 42000000）、saveenv、boot（启动Linux系统）<a target="_blank" rel="noopener" href="https://blog.csdn.net/qq_46079439/article/details/125474461">U-Boot常用命令</a></p>
+<p><strong>uboot启动详细流程：</strong></p>
+<p>uboot属于两阶段的BootLoader，即汇编阶段与C语言阶段</p>
+<p>​        汇编阶段文件为arch/arm/cpu/下对应cpu的start.S和board/目录下对应板子的lowlevel_init.S，前者是平台相关代码，后者为开发板对应代码；主要完成一些依赖于cpu体系结构的初始化，并调用C语言阶段代码</p>
+<p>​        C语言阶段代码文件为arch/arm/lib/board.c里边会调用board/目录下对应板子的c文件的函数进行硬件初始化等;即一般在这里添加一些功能</p>
+<h4 id="编译移植"><a href="#编译移植" class="headerlink" title="编译移植"></a>编译移植</h4><p><strong>编译</strong>：uboot顶层目录</p>
+<p>​            配置：make  板子名字_config ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi-</p>
+<p>​            编译：make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi-；顶层目录生成烧录文件u-boot.bin</p>
+<p>​            清理：make distclean</p>
+<p><strong>移植：</strong>uboot顶层目录，以origen为例</p>
+<p>​            移植板级代码：cp board/samsung/origen board/samsung/fs4412 -a</p>
+<p>​                                       cd board/samsung/origen board/samsung/fs4412<br>​                                       mv origen.c fs4412.c<br>​                                       vim  Makefile,将origen替换为fs4412</p>
+<p>​            拷贝配置文件：cp include/configs/origen.h include/configs/fs4412.h</p>
+<p>​            增加板子配置：vi board.cfg 模仿origen编写fs4412</p>
+<p>​            编译</p>
+<h2 id="内核编译"><a href="#内核编译" class="headerlink" title="内核编译"></a>内核编译</h2><p><strong>内核源码分类：</strong></p>
+<p>​        1、平台相关：</p>
+<p>​                        cpu：arch</p>
+<p>​                        板子：设备树（以树形结构记录板级设备信息的文件dts）arch/arm/boot/dts/</p>
+<p>​                        配置：arch/arm/configs</p>
+<p>​        2、平台无关：</p>
+<p>​                    Documentation-文档   init-初始化代码     lib: 内核独有精简C库        README          sound<br>​                    block-块设备框架      drivers-驱动     ipc-进程间通信     MAINTAINERS  REPORTING-BUGS  tools<br>​                    COPYING  firmware       Kbuild   Makefile     samples         usr<br>​                    CREDITS  fs:文件系统的支持             Kconfig  mm:内存管理     scripts         virt<br>​                    crypto   include: 头文件        kernel-核心实现   net-网络协议          security-加密安全算法</p>
+<p><strong>编译</strong>：顶层目录</p>
+<p>​            1、配置 ：cp arch/arm/configs/exynos_defconfig   .config //拷贝需要编译的板子配置信息到顶层目录并重命名为.config</p>
+<p>​                                make menuconfig  ARCH=arm //配置内核功能，裁剪内核</p>
+<p>​            2、编译：@@make ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi-          生成zImage<br>​                          make  uImage  ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi-      生成uImage </p>
+<p>​                          生成uImage需要拷贝u-boot编译后生成的mkimage工具：sudo cp tools/mkimage /bin</p>
+<p>​            3、生成的在arch/arm/boot/下:</p>
+<p>​                            Image  内核二进制文件，可直接运行</p>
+<p>​                            zImage  对Image进行的压缩，运行需先解压，自带解压程序</p>
+<p>​                            uImage  u-boot专用Image</p>
+<p>​            4、清除：make distclean清除全部配置 make clean保留.config</p>
+<p>单独编译设备树：make dtbs ARCH=arm CROSS_COMPILE=arm-none-linux-gnueabi-</p>
+<h2 id="文件系统制作"><a href="#文件系统制作" class="headerlink" title="文件系统制作"></a>文件系统制作</h2><p>ramdisk，buildroot</p>
+<p>ramdisk文件系统，掉电丢失，读写速度快，安全性高，自2.6以后就开始淘汰；//可挂载flash，来存储到硬盘上使用</p>
+<p>ramdisk是使用内存模拟一个块设备，需要一个文件系统来组织数据，还需要格式化为如ext2或其他文件系统格式</p>
+<p>buildroot是制作根文件系统的工具，拥有图形化界面配置</p>
+<p><strong>制作ramdisk文件系统</strong></p>
+<p>1、制作8m的镜像文件：dd   if=/dev/zero  of=ramdisk   bs=1k   count=8192</p>
+<p>2、格式化为ext2文件格式：mkfs.ext2   -F   ramdisk</p>
+<p>3、创建目录作为挂载点：sudo mkdir /mnt/initrd</p>
+<p>4、挂载镜像文件：sudo mount -t   ext2  ramdisk  /mnt/initrd</p>
+<p>5、复制解压的根文件系统（VFS文件夹解压测试好的文件系统）：sudo cp   VFS/rootfs/*   /mnt/initrd  -a</p>
+<p>6、卸载initrd ：sudo umount  /mnt/initrd</p>
+<p>7、压缩ramdisk为ramdisk.gz：gzip  –best  -c  ramdisk  &gt;   ramdisk.gz</p>
+<p>8、格式化为uboot可识别格式：mkimage -n “ramdisk” -A arm -O linux -T ramdisk -C gzip -d ramdisk.gz ramdisk.img</p>
+<p>ramdisk.img即为制作好的ramdisk文件系统</p>
+<p><strong>配置内核支持ramdisk：</strong></p>
+<p>​        make menuconfig</p>
+<p>​        Device  Drivers</p>
+<p>​                Block  device —&gt;</p>
+<p>​                                &lt;*&gt;RAM  block device  support</p>
+<p>​                                (8192) Default RAM disk size (kbytes)  <strong>(修改为8M)</strong></p>
+<p>​        General setup —&gt;</p>
+<pre><code>           [*] Initial RAM filesystem and RAM disk (initramfs/initrd) support
+</code></pre>
+<p><strong>ramdisk启动：</strong></p>
+<p>进入u-boot交互模式</p>
+<p>1、下载os到ram</p>
+<p>​        tftp 41000000 uImage</p>
+<p>​        movi  write kernel  41000000</p>
+<p>2、下载dtb 到ram</p>
+<p>​        tftp  41000000 exynos4412-fs4412.dtb</p>
+<p>​        movi write dtb 41000000</p>
+<p>3、下载文件系统到ram</p>
+<p>​        tftp 41000000 ramdisk.img<br>​                        Bytes transferred = 2544147 (26d213 hex)<br>​        movi write rootfs 41000000  26d213</p>
+<p>4、修改bootcmd<br>        set bootcmd   movi read kernel 41000000;movi read dtb 42000000;movi read rootfs 43000000 26d213;bootm 41000000 43000000 42000000<br>        set  bootargs  root=/dev/ram0  rw console=ttySAC2,115200 init=/linuxrc</p>
+<p><strong>buildroot:</strong><a target="_blank" rel="noopener" href="https://blog.csdn.net/iriczhao/article/details/127622954">【buildroot】buildroot使用笔记-01 | 常规使用步骤_iriczhao的博客-CSDN博客</a></p>
+<p>开机启动:<br>        在 /etc/init.d/rcS     加入你的启动程序</p>
 
                 
             </div>
@@ -840,7 +910,7 @@
             <br>
             
                 &nbsp;<i class="fas fa-chart-area"></i>&nbsp;站点总字数:&nbsp;<span
-                        class="white-color">967</span>
+                        class="white-color">2.1k</span>
             
             
             
